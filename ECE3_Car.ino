@@ -1,4 +1,17 @@
 #include <ECE3.h>
+#include <stdio.h>
+
+const int left_nslp_pin=31; // nslp HIGH ==> awake & ready for PWM
+const int right_nslp_pin=11; // nslp HIGH ==> awake & ready for PWM
+const int left_dir_pin=29;
+const int right_dir_pin=30;
+const int left_pwm_pin=40;
+const int right_pwm_pin=39;
+
+int left_wheel_speed=90;
+int right_wheel_speed=90;
+int max_speed = 170;
+int min_speed = 0;
 
 uint16_t sensorValues[8];
 float weightedValues[8];
@@ -6,30 +19,85 @@ uint16_t MIN_VALUES[8] = {641,	619,	619,	550,	642,	665,	620,	641};
 uint16_t MAX_VALUES[8] = {1859,	1881,	1881,	1300,	1422,	1835,	1847,	1442};
 
 float errorValue;
-float totalWeightedSum;
+float k_p = 0.025;
+float k_d = 0.000;
+float k_val;
+float p_left;
+float p_right;
+float prev_error;
+float d_val;
+unsigned long lastTime = 0;
+
+float proportional_control(float error, float k_p) {
+  //if the car is to the right of the track, error is positive
+  //if the car is to the left of the track, error is negative
+  //this is assuming car is facing forward
+  return error * k_p;
+}
 
 void setup() {
   // put your setup code here, to run once:
   ECE3_Init();
+  pinMode(left_nslp_pin,OUTPUT);
+  pinMode(left_dir_pin,OUTPUT);
+  pinMode(left_pwm_pin,OUTPUT);
+  pinMode(right_nslp_pin,OUTPUT);
+  pinMode(right_dir_pin,OUTPUT);
+  pinMode(right_pwm_pin,OUTPUT);
+
+
+  digitalWrite(left_nslp_pin,HIGH);
+  digitalWrite(right_nslp_pin,HIGH);
+
+
   Serial.begin(9600); // set the data rate in bits per second for serial data transmission
-  delay(1000);
-  for (int i = 0; i < 8; i++) {
-    sensorRange[i] = (float)(MAX_VALUES[i] - MIN_VALUES[i]);
-  }
+  delay(2000);
+  lastTime = micros();
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   ECE3_read_IR(sensorValues);
-  for(int i=0;i < 8; i++) {
-    sensorValues[i] -= MIN_VALUES[i];
-    weightedValues[i] *= (1000.0 / MAX_VALUES[i]);
+  for(int i=0; i < 8; i++) {
+    weightedValues[i] = (float) (sensorValues[i] - MIN_VALUES[i]) * 1000 / MAX_VALUES[i];
+    // Serial.println(weightedValues[i]);
   }
-  errorValue = ( -8.0*weightedValues[0] - 4*weightedValues[1] - 2*weightedValues[2] - weightedValues[3] + weightedValues[4] + 2*weightedValues[5] + 4*weightedValues[6] + 8*weightedValues[7]);
-  Serial.println("Sensor Values: ");
-  for(int i=0;i < 8; i++) {
-    Serial.print(sensorValues[i] + " ")
+
+  unsigned long now = micros();
+  float dt = (now - lastTime) / 1e6;
+
+  errorValue = ( -8.0*weightedValues[0] - 4*weightedValues[1] - 2*weightedValues[2] - weightedValues[3] + weightedValues[4] + 2*weightedValues[5] + 4*weightedValues[6] + 8*weightedValues[7]) / 4;
+  k_val = errorValue * k_p;
+  d_val = k_d * (errorValue - prev_error)/dt;
+  // right_wheel_speed += k_val;
+  // left_wheel_speed -= k_val;
+  p_left = left_wheel_speed - k_val - d_val;
+  p_right = right_wheel_speed + k_val + d_val;
+
+  // Apply speed limits (clamping)
+  if (p_left < min_speed) {
+    p_left = min_speed;
+
+  } else if (p_left > max_speed) {
+    p_left = max_speed;
   }
-  Serial.println(errorValue);
-  delay(1000);
+
+  if (p_right < min_speed) {
+    p_right = min_speed;
+  } else if (p_right > max_speed) {
+    p_right = max_speed;
+  }
+
+  // left_wheel_speed = left_wheel_speed - k_val < max_speed ? left_wheel_speed - k_val : max_speed;
+  // right_wheel_speed = right_wheel_speed + k_val < max_speed ? right_wheel_speed + k_val : max_speed;
+
+  analogWrite(left_pwm_pin, p_left);
+  analogWrite(right_pwm_pin, p_right);
+
+  // Serial.print("Left Wheel Speed: ");
+  // Serial.println(left_wheel_speed);
+  // Serial.print("Right Wheel Speed: ");
+  // Serial.println(right_wheel_speed);
+  prev_error = errorValue;
+  lastTime = now;
 }
