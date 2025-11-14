@@ -1,4 +1,16 @@
 #include <ECE3.h>
+#include <stdio.h>
+
+const int left_nslp_pin=31; // nslp HIGH ==> awake & ready for PWM
+const int right_nslp_pin=11; // nslp HIGH ==> awake & ready for PWM
+const int left_dir_pin=29;
+const int right_dir_pin=30;
+const int left_pwm_pin=40;
+const int right_pwm_pin=39;
+
+int left_wheel_speed=50;
+int right_wheel_speed=50;
+int max_speed = 90;
 
 uint16_t sensorValues[8];
 float weightedValues[8];
@@ -6,26 +18,54 @@ uint16_t MIN_VALUES[8] = {641,	619,	619,	550,	642,	665,	620,	641};
 uint16_t MAX_VALUES[8] = {1859,	1881,	1881,	1300,	1422,	1835,	1847,	1442};
 
 float errorValue;
+float k_p = 0.025;
+
+float proportional_control(float error, float k_p) {
+  //if the car is to the right of the track, error is positive
+  //if the car is to the left of the track, error is negative
+  //this is assuming car is facing forward
+  return error * k_p;
+}
 
 
 void setup() {
   // put your setup code here, to run once:
   ECE3_Init();
+  pinMode(left_nslp_pin,OUTPUT);
+  pinMode(left_dir_pin,OUTPUT);
+  pinMode(left_pwm_pin,OUTPUT);
+  pinMode(right_nslp_pin,OUTPUT);
+  pinMode(right_dir_pin,OUTPUT);
+  pinMode(right_pwm_pin,OUTPUT);
+
+
+  digitalWrite(left_nslp_pin,HIGH);
+  digitalWrite(right_nslp_pin,HIGH);
+
+
   Serial.begin(9600); // set the data rate in bits per second for serial data transmission
-  delay(1000);
+  delay(2000);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   ECE3_read_IR(sensorValues);
-  for(int i=0;i < 8; i++) {
-    sensorValues[i] -= MIN_VALUES[i];
-    weightedValues[i] *= (1000.0 / MAX_VALUES[i]);
+  for(int i=0; i < 8; i++) {
+    weightedValues[i] = (float) (sensorValues[i] - MIN_VALUES[i]) * 1000 / MAX_VALUES[i];
+    // Serial.println(weightedValues[i]);
   }
-  errorValue = ( -8.0*weightedValues[0] - 4*weightedValues[1] - 2*weightedValues[2] - weightedValues[3] + weightedValues[4] + 2*weightedValues[5] + 4*weightedValues[6] + 8*weightedValues[7]);
-  for(int i=0;i < 8; i++) {
-    Serial.println("Sensor Values: ")
-  }
-  Serial.println(errorValue);
-  delay(1000);
+  errorValue = ( -8.0*weightedValues[0] - 4*weightedValues[1] - 2*weightedValues[2] - weightedValues[3] + weightedValues[4] + 2*weightedValues[5] + 4*weightedValues[6] + 8*weightedValues[7]) / 4;
+  
+  left_wheel_speed = (errorValue*k_p) < max_speed) ? (left_wheel_speed - (errorValue * k_p)) : max_speed;
+  right_wheel_speed = 
+  (errorValue*k_p) < max_speed) ? (right_wheel_speed - (errorValue * k_p)) : max_speed;
+
+  analogWrite(left_pwm_pin, left_wheel_speed);
+  analogWrite(right_pwm_pin, right_wheel_speed);
+
+  Serial.print("Left Wheel Speed: ");
+  Serial.println(left_wheel_speed);
+  Serial.print("Right Wheel Speed: ");
+  Serial.println(right_wheel_speed);
+
 }
