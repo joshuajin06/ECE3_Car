@@ -20,7 +20,7 @@ uint16_t MAX_VALUES[8] = {1859,	1881,	1881,	1300,	1422,	1835,	1847,	1442};
 
 float errorValue;
 float k_p = 0.04;
-float k_d = 0.000;
+float k_d = 0.001;
 float k_val;
 float p_left;
 float p_right;
@@ -28,9 +28,14 @@ float prev_error;
 float d_val;
 unsigned long lastTime = 0;
 
+int K = 1;
+
+bool end_program = false;
+
 int crosspiece_counter = 0;
+int crosspieces_seen = 0;
 bool turn_255_happened = false;
-unsigned long turn_timer = 0;
+unsigned long turn_timer = 1870;
 
 float proportional_control(float error, float k_p) {
   //if the car is to the right of the track, error is positive
@@ -39,27 +44,64 @@ float proportional_control(float error, float k_p) {
   return error * k_p;
 }
 
-void crosspiece_control(float sum) {
-  Serial.println(weightedValues[0]);
-  Serial.println(sum);
-  if(sum > 8000) {
-    Serial.println("sum greater than 8000");
-    crosspiece_counter += 1;
-    if(turn_255_happened == false && crosspiece_counter == 2) {
-      Serial.println("first if statement");
-      crosspiece_counter = 1;
-      unsigned long cur_time = millis();
-      digitalWrite(left_dir_pin,LOW);
-      while((millis()-cur_time) < turn_timer) {
-          Serial.println("second if statement");
-          analogWrite(left_pwm_pin, 50);
-          analogWrite(right_pwm_pin, 50);
-      }
-      Serial.println("third if statement");
-      turn_255_happened = true;
-      crosspiece_counter = 0;
-      digitalWrite(left_dir_pin, HIGH);
+bool crosspiece_detected() {
+  int count = 0;
+  for (int i = 0; i < 8; ++i){
+    // thres = MAX_VALUES[i]-MIN_VALUES[i]
+    // Serial.println(thres)
+    // Serial.print("weighted: ");
+    // Serial.print(i);
+    // Serial.print(" ");
+    // Serial.println(sensorValues[i]);
+    // if (weightedValues[i] > MAX_VALUES[i]-MIN_VALUES[i]){
+    if (sensorValues[i] > 2200){
+      count++;
     }
+  }
+
+  if(count >= 4){
+    // Serial.println("Returning True");
+    return true;
+  }
+  // Serial.println("Returning False");
+  return false;
+}
+
+void crosspiece_control() {
+  // Serial.println(sum);
+  if(crosspiece_detected()) {
+    crosspiece_counter += 1;
+    // Serial.println(crosspiece_counter);
+    if(crosspiece_counter==2){
+      crosspieces_seen += 1;
+      if(turn_255_happened == false) {
+        crosspiece_counter = 1;
+        unsigned long cur_time = millis();
+        delay(150);
+        digitalWrite(left_dir_pin,HIGH);
+        while((millis()-cur_time) < turn_timer) {
+            analogWrite(left_pwm_pin, 50);
+            analogWrite(right_pwm_pin, 50);
+        }
+        turn_255_happened = true;
+        crosspiece_counter = 0;
+        digitalWrite(left_dir_pin, LOW);
+
+        // Serial.println("IF STATEMENT ENTERED");
+        // delay(10000);
+      }
+      if(crosspieces_seen == 1) {
+        K = 2;
+      }
+      else {
+        K = 1;
+      }
+      // if(crosspieces_seen == 4){
+      //   end_program = true;
+      //   return;
+      // }
+    }
+
   }
 }
 
@@ -79,7 +121,7 @@ void setup() {
 
 
   Serial.begin(9600); // set the data rate in bits per second for serial data transmission
-  delay(2000);
+  // delay(2000);
   lastTime = micros();
 }
 
@@ -88,6 +130,7 @@ void loop() {
 
   ECE3_read_IR(sensorValues);
 
+  float sum = 0;
   for(int i=0; i < 8; i++) {
     weightedValues[i] = (float) (sensorValues[i] - MIN_VALUES[i]) * 1000 / MAX_VALUES[i];
     // Serial.println(weightedValues[i]);
@@ -95,12 +138,11 @@ void loop() {
 
   unsigned long now = micros();
   float dt = (now - lastTime) / 1e6;
-  float sum = 0;
-  for(int i=0; i < 8;i ++) {
+  for(int i=2; i < 5;i ++) {
     sum += weightedValues[i];
   }
 
-  errorValue = ( -8.0*weightedValues[0] - 4*weightedValues[1] - 2*weightedValues[2] - weightedValues[3] + weightedValues[4] + 2*weightedValues[5] + 4*weightedValues[6] + 8*weightedValues[7]) / 4;
+  errorValue = ( -8*weightedValues[0] - 4*weightedValues[1] - 2 * K * weightedValues[2] - K * weightedValues[3] + weightedValues[4] + 2*weightedValues[5] + 4*weightedValues[6] + 8*weightedValues[7]) / 4;
   
   float baseSpeed = left_wheel_speed - 0.1 * abs(errorValue);
   baseSpeed = constrain(baseSpeed, 20, 50);
@@ -110,7 +152,9 @@ void loop() {
   // right_wheel_speed += k_val;
   // left_wheel_speed -= k_val;
   p_left = baseSpeed - k_val - d_val;
+  // p_left = baseSpeed - k_val;
   p_right = baseSpeed + k_val + d_val;
+  // p_right = baseSpeed + k_val;
 
   // Apply speed limits (clamping)
   if (p_left < min_speed) {
@@ -126,7 +170,13 @@ void loop() {
     p_right = max_speed;
   }
 
-  crosspiece_control(sum);
+  crosspiece_control();
+
+  // if(end_program == true){
+  //   while (true) {
+  //     // do nothing
+  //   }
+  // }
 
   // left_wheel_speed = left_wheel_speed - k_val < max_speed ? left_wheel_speed - k_val : max_speed;
   // right_wheel_speed = right_wheel_speed + k_val < max_speed ? right_wheel_speed + k_val : max_speed;
