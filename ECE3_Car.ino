@@ -1,8 +1,6 @@
 #include <ECE3.h>
 #include <stdio.h>
 
-asdfljashdlfjahsdfh
-
 const int left_nslp_pin=31; // nslp HIGH ==> awake & ready for PWM
 const int right_nslp_pin=11; // nslp HIGH ==> awake & ready for PWM
 const int left_dir_pin=29;
@@ -34,100 +32,128 @@ int K = 1;
 
 bool end_program = false;
 
-int crosspiece_counter = 0;
-int crosspieces_seen = 0;
-bool turn_255_happened = false;
-unsigned long turn_timer = 1870;
 
-float proportional_control(float error, float k_p) {
-  //if the car is to the right of the track, error is positive
-  //if the car is to the left of the track, error is negative
-  //this is assuming car is facing forward
-  return error * k_p;
-}
+// -------- crosspiece control variables ---------------
+int debounce_count = 0; 
+
+// 0 = Start, 1 = Donut, 2 = Horseshoe Start, 3 = Horseshoe End, 4 = Finish
+int track_state = 0; 
+
+// 'turn_255_happened' replaces 'turn_255_happened'
+bool turn_255_happened = false;
+
+// --- CONSTANTS (No more magic numbers) ---
+const unsigned long spin_duration = 1400; // Time to spin for 225 degrees
+const int BLACK_THRESHOLD = 2200;          // Sensor value for black line
 
 bool crosspiece_detected() {
-  int thres = 4;
   int count = 0;
+  int sensor_threshold = 4; // Require 4 sensors to be dark
+
   for (int i = 0; i < 8; ++i){
-    // thres = MAX_VALUES[i]-MIN_VALUES[i]
-    // Serial.println(thres)
-    // Serial.print("weighted: ");
-    // Serial.print(i);
-    // Serial.print(" ");
-    // Serial.println(sensorValues[i]);
-    // if (weightedValues[i] > MAX_VALUES[i]-MIN_VALUES[i]){
-    if (sensorValues[i] > 2200){
+    // Using the constant defined above instead of hardcoded 2200
+    if (sensorValues[i] > BLACK_THRESHOLD){
       count++;
     }
   }
-  if(crosspieces_seen == 3){
-    thres = 3;
+
+  // Special Case: The 3rd marker (End of Horseshoe) is tricky/thin?
+  if(track_state == 3){
+    sensor_threshold = 3;
   }
 
-  if(count >= thres){
-    // Serial.println("Returning True");
+  if(count >= sensor_threshold){
     return true;
   }
-  // Serial.println("Returning False");
   return false;
 }
 
-void crosspiece_control() {
-  // Serial.println(sum);
-  if(crosspiece_detected()) {
-    crosspiece_counter += 1;
-    // Serial.println(crosspiece_counter);
-    if(crosspiece_counter==2){
-      crosspieces_seen += 1;
-      if(turn_255_happened == false) {
-        crosspiece_counter = 1;
-        unsigned long cur_time = millis();
-        delay(150);
-        digitalWrite(left_dir_pin,HIGH);
-        while((millis()-cur_time) < turn_timer) {
-            analogWrite(left_pwm_pin, 50);
-            analogWrite(right_pwm_pin, 50);
-        }
-        turn_255_happened = true;
-        crosspiece_counter = 0;
-        digitalWrite(left_dir_pin, LOW);
-
-        // Serial.println("IF STATEMENT ENTERED");
-        // delay(10000);
-      }
-      if(crosspieces_seen == 1) {
-        K = 2;
-        digitalWrite(75, HIGH);
-        digitalWrite(76, LOW);
-        digitalWrite(77, LOW);
-      }
-      else if(crosspieces_seen == 2) {
-        digitalWrite(75, LOW);
-        digitalWrite(76, HIGH);
-        digitalWrite(77, LOW);
-      }
-      else if(crosspieces_seen == 3) {
-        digitalWrite(75, LOW);
-        digitalWrite(76, LOW);
-        digitalWrite(77, HIGH);
-      }
-      else if(crosspieces_seen == 4){
-        digitalWrite(75, HIGH);
-        digitalWrite(76, LOW);
-        digitalWrite(77, LOW);
-        end_program = true;
-        return;
-      }
-      else {
-        K = 1;
-      }
-      // if(crosspieces_seen == 4){
-      //   end_program = true;
-      //   return;
-      // }
+// Helper function to handle the 225 degree turn
+void perform_spin() {
+    unsigned long start_time = millis();
+    
+    // Pause briefly before turn
+    delay(150);
+    
+    // Set motors to spin Counter-Clockwise
+    // Left Wheel Reverses (HIGH), Right Wheel Forward (LOW)
+    digitalWrite(left_dir_pin, HIGH);
+    
+    // Spin for the exact duration
+    while((millis() - start_time) < spin_duration) {
+        analogWrite(left_pwm_pin, 50);
+        analogWrite(right_pwm_pin, 50);
     }
+    
+    // Reset Left Wheel to Forward (LOW)
+    digitalWrite(left_dir_pin, LOW);
+    
+    turn_255_happened = true;
+    
+    // Reset debounce so we don't accidentally trigger again immediately
+    debounce_count = 0; 
+}
 
+void crosspiece_control() {
+
+  // Do we see a black bar?
+  if(crosspiece_detected()) {
+    debounce_count++; // Increment noise filter
+
+    // Have we seen it 2 times in a row?
+    if(debounce_count == 2){
+      
+      track_state++; // We passed a marker, move to next state
+
+      // --- STATE 1: THE 225 DEGREE TURN ---
+      if(track_state == 1) {
+        if(!turn_255_happened) {
+           perform_spin();
+        }
+        
+        // After spin, increase K gain (aggressive turning for horseshoe?)
+        K = 2; 
+        
+        // LED Debug: ON-OFF-OFF
+        digitalWrite(75, HIGH); 
+        digitalWrite(76, LOW); 
+        digitalWrite(77, LOW);
+      }
+      
+      // --- STATE 2: HORSESHOE START  ---
+      else if(track_state == 2) {
+        // LED Debug: OFF-ON-OFF
+        digitalWrite(75, LOW); 
+        digitalWrite(76, HIGH); 
+        digitalWrite(77, LOW);
+        
+        K = 1; // Reset K to normal
+      }
+      
+      // --- STATE 3: HORSESHOE END ---
+      else if(track_state == 3) {
+        // LED Debug: OFF-OFF-ON
+        digitalWrite(75, LOW); 
+        digitalWrite(76, LOW); 
+        digitalWrite(77, HIGH);
+        
+        // K stays at 1
+      }
+      
+      // --- STATE 4: END OF TRACK ---
+      else if(track_state == 4){
+        // LED Debug: ON-OFF-OFF
+        digitalWrite(75, HIGH); 
+        digitalWrite(76, LOW); 
+        digitalWrite(77, LOW);
+        
+        end_program = true;           // Successfully ends run
+      }
+    }
+  } 
+  else {
+    // If we don't see the line, reset the noise filter
+    debounce_count = 0;
   }
 }
 
@@ -200,9 +226,9 @@ void loop() {
 
   if(end_program == true){
     while (true) {
-      // do nothing
+      analogWrite(left_pwm_pin, 0);  // ADD THIS: Turn off motors!
+      analogWrite(right_pwm_pin, 0); // ADD THIS: Turn off motors!
     }
-    // return;
   }
 
   // left_wheel_speed = left_wheel_speed - k_val < max_speed ? left_wheel_speed - k_val : max_speed;
