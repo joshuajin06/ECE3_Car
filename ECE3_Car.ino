@@ -1,6 +1,8 @@
 #include <ECE3.h>
 #include <stdio.h>
 
+asdfljashdlfjahsdfh
+
 const int left_nslp_pin=31; // nslp HIGH ==> awake & ready for PWM
 const int right_nslp_pin=11; // nslp HIGH ==> awake & ready for PWM
 const int left_dir_pin=29;
@@ -45,6 +47,7 @@ float proportional_control(float error, float k_p) {
 }
 
 bool crosspiece_detected() {
+  int thres = 4;
   int count = 0;
   for (int i = 0; i < 8; ++i){
     // thres = MAX_VALUES[i]-MIN_VALUES[i]
@@ -58,8 +61,11 @@ bool crosspiece_detected() {
       count++;
     }
   }
+  if(crosspieces_seen == 3){
+    thres = 3;
+  }
 
-  if(count >= 4){
+  if(count >= thres){
     // Serial.println("Returning True");
     return true;
   }
@@ -92,6 +98,26 @@ void crosspiece_control() {
       }
       if(crosspieces_seen == 1) {
         K = 2;
+        digitalWrite(75, HIGH);
+        digitalWrite(76, LOW);
+        digitalWrite(77, LOW);
+      }
+      else if(crosspieces_seen == 2) {
+        digitalWrite(75, LOW);
+        digitalWrite(76, HIGH);
+        digitalWrite(77, LOW);
+      }
+      else if(crosspieces_seen == 3) {
+        digitalWrite(75, LOW);
+        digitalWrite(76, LOW);
+        digitalWrite(77, HIGH);
+      }
+      else if(crosspieces_seen == 4){
+        digitalWrite(75, HIGH);
+        digitalWrite(76, LOW);
+        digitalWrite(77, LOW);
+        end_program = true;
+        return;
       }
       else {
         K = 1;
@@ -157,7 +183,7 @@ void loop() {
   // p_right = baseSpeed + k_val;
 
   // Apply speed limits (clamping)
-  if (p_left < min_speed) {
+  if (p_left < 0) {
     p_left = min_speed;
 
   } else if (p_left > max_speed) {
@@ -172,11 +198,12 @@ void loop() {
 
   crosspiece_control();
 
-  // if(end_program == true){
-  //   while (true) {
-  //     // do nothing
-  //   }
-  // }
+  if(end_program == true){
+    while (true) {
+      // do nothing
+    }
+    // return;
+  }
 
   // left_wheel_speed = left_wheel_speed - k_val < max_speed ? left_wheel_speed - k_val : max_speed;
   // right_wheel_speed = right_wheel_speed + k_val < max_speed ? right_wheel_speed + k_val : max_speed;
