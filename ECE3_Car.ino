@@ -8,8 +8,8 @@ const int right_dir_pin=30;
 const int left_pwm_pin=40;
 const int right_pwm_pin=39;
 
-int left_wheel_speed=50;
-int right_wheel_speed=50;
+int left_wheel_speed=20;
+int right_wheel_speed=20;
 int max_speed = 110;
 int min_speed = 0;
 
@@ -43,8 +43,8 @@ int track_state = 0;
 bool turn_255_happened = false;
 
 // --- CONSTANTS (No more magic numbers) ---
-const unsigned long spin_duration = 1400; // Time to spin for 225 degrees
-const int BLACK_THRESHOLD = 2200;          // Sensor value for black line
+const unsigned long spin_duration = 1500; // Time to spin for 225 degrees
+const int BLACK_THRESHOLD = 2100;          // Sensor value for black line
 
 bool crosspiece_detected() {
   int count = 0;
@@ -73,7 +73,7 @@ void perform_spin() {
     unsigned long start_time = millis();
     
     // Pause briefly before turn
-    delay(150);
+    delay(50);
     
     // Set motors to spin Counter-Clockwise
     // Left Wheel Reverses (HIGH), Right Wheel Forward (LOW)
@@ -110,9 +110,16 @@ void crosspiece_control() {
         if(!turn_255_happened) {
            perform_spin();
         }
+
+        left_wheel_speed=50;
+        right_wheel_speed=50;
         
         // After spin, increase K gain (aggressive turning for horseshoe?)
         K = 2; 
+
+        // weightedValues[5] = 665;
+        // weightedValues[6] = 620;
+        // weightedValues[7] = 641;
         
         // LED Debug: ON-OFF-OFF
         digitalWrite(75, HIGH); 
@@ -132,10 +139,35 @@ void crosspiece_control() {
       
       // --- STATE 3: HORSESHOE END ---
       else if(track_state == 3) {
+        // left_wheel_speed=30;
+        // right_wheel_speed=30;
+
+
+        // weightedValues[4] = 0;
+        // weightedValues[5] = 0;
+        // weightedValues[6] = 0;
+        // weightedValues[7] = 0;
+        // weightedValues[4] = 642;
+        // weightedValues[5] = 665;
+        // weightedValues[6] = 620;
+        // weightedValues[7] = 641;
+
+        // bool firmly_on_left_line = (weightedValues[3] > 500) || (weightedValues[4] > 500);
+
+        // if (firmly_on_left_line) {
+        //   // We are safe on the main line. Put blinders on the right side.
+        //   // This makes the car ignore the split track on the right.
+        //   weightedValues[0] = 600;
+        //   weightedValues[1] = 600; 
+        // }
+
+
         // LED Debug: OFF-OFF-ON
         digitalWrite(75, LOW); 
         digitalWrite(76, LOW); 
         digitalWrite(77, HIGH);
+
+        k_p = 0.06;
         
         // K stays at 1
       }
@@ -146,6 +178,7 @@ void crosspiece_control() {
         digitalWrite(75, HIGH); 
         digitalWrite(76, LOW); 
         digitalWrite(77, LOW);
+        delay(230);
         
         end_program = true;           // Successfully ends run
       }
@@ -182,6 +215,8 @@ void loop() {
 
   ECE3_read_IR(sensorValues);
 
+  // Serial.println(sensorValues[0]);
+
   float sum = 0;
   for(int i=0; i < 8; i++) {
     weightedValues[i] = (float) (sensorValues[i] - MIN_VALUES[i]) * 1000 / MAX_VALUES[i];
@@ -194,8 +229,22 @@ void loop() {
     sum += weightedValues[i];
   }
 
+  crosspiece_control();
+  if (track_state == 3) {
+      
+      // Check if the CENTER sensors see the line (Indices 3 and 4 are the middle)
+      bool firmly_on_main_line = (weightedValues[3] > 500) || (weightedValues[4] > 500) || (weightedValues[5] > 500);
+    
+      if (firmly_on_main_line) {
+        // "Blinders on" - Ignore the split track on the RIGHT.
+        weightedValues[0] = 0;
+        weightedValues[1] = 0; 
+        weightedValues[2] = 0; 
+      }
+  }
   errorValue = ( -8*weightedValues[0] - 4*weightedValues[1] - 2 * K * weightedValues[2] - K * weightedValues[3] + weightedValues[4] + 2*weightedValues[5] + 4*weightedValues[6] + 8*weightedValues[7]) / 4;
   
+
   float baseSpeed = left_wheel_speed - 0.1 * abs(errorValue);
   baseSpeed = constrain(baseSpeed, 20, 50);
   
@@ -222,7 +271,6 @@ void loop() {
     p_right = max_speed;
   }
 
-  crosspiece_control();
 
   if(end_program == true){
     while (true) {
