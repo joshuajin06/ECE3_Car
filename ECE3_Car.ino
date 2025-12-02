@@ -8,6 +8,7 @@ const int right_dir_pin=30;
 const int left_pwm_pin=40;
 const int right_pwm_pin=39;
 
+
 int left_wheel_speed=20;
 int right_wheel_speed=20;
 int max_speed = 110;
@@ -43,7 +44,7 @@ int track_state = 0;
 bool turn_255_happened = false;
 
 // --- CONSTANTS (No more magic numbers) ---
-const unsigned long spin_duration = 1500; // Time to spin for 225 degrees
+const unsigned long spin_duration = 1600; // Time to spin for 225 degrees
 const int BLACK_THRESHOLD = 2100;          // Sensor value for black line
 
 bool crosspiece_detected() {
@@ -61,6 +62,9 @@ bool crosspiece_detected() {
   if(track_state == 3){
     sensor_threshold = 3;
   }
+  if(track_state == 1){
+    sensor_threshold = 5;
+  }
 
   if(count >= sensor_threshold){
     return true;
@@ -73,7 +77,7 @@ void perform_spin() {
     unsigned long start_time = millis();
     
     // Pause briefly before turn
-    delay(50);
+    delay(80);
     
     // Set motors to spin Counter-Clockwise
     // Left Wheel Reverses (HIGH), Right Wheel Forward (LOW)
@@ -167,6 +171,9 @@ void crosspiece_control() {
         digitalWrite(76, LOW); 
         digitalWrite(77, HIGH);
 
+        left_wheel_speed=80;
+        right_wheel_speed=80;
+
         k_p = 0.06;
         
         // K stays at 1
@@ -178,7 +185,7 @@ void crosspiece_control() {
         digitalWrite(75, HIGH); 
         digitalWrite(76, LOW); 
         digitalWrite(77, LOW);
-        delay(230);
+        delay(200);
         
         end_program = true;           // Successfully ends run
       }
@@ -206,7 +213,7 @@ void setup() {
 
 
   Serial.begin(9600); // set the data rate in bits per second for serial data transmission
-  // delay(2000);
+  delay(2000);
   lastTime = micros();
 }
 
@@ -230,7 +237,8 @@ void loop() {
   }
 
   crosspiece_control();
-  if (track_state == 3) {
+  if (track_state == 3 || track_state == 1) {
+  // if (track_state == 3) {
       
       // Check if the CENTER sensors see the line (Indices 3 and 4 are the middle)
       bool firmly_on_main_line = (weightedValues[3] > 500) || (weightedValues[4] > 500) || (weightedValues[5] > 500);
@@ -239,9 +247,21 @@ void loop() {
         // "Blinders on" - Ignore the split track on the RIGHT.
         weightedValues[0] = 0;
         weightedValues[1] = 0; 
-        weightedValues[2] = 0; 
+        weightedValues[2] = 400; 
       }
   }
+  // if (track_state == 1) {
+      
+  //     // Check if the CENTER sensors see the line (Indices 3 and 4 are the middle)
+  //     bool firmly_on_main_line = (weightedValues[3] > 500) || (weightedValues[4] > 500) || (weightedValues[5] > 500);
+    
+  //     if (firmly_on_main_line) {
+  //       // "Blinders on" - Ignore the split track on the RIGHT.
+  //       weightedValues[0] = 0;
+  //       weightedValues[1] = 0; 
+  //       // weightedValues[2] = 0; 
+  //     }
+  // }
   errorValue = ( -8*weightedValues[0] - 4*weightedValues[1] - 2 * K * weightedValues[2] - K * weightedValues[3] + weightedValues[4] + 2*weightedValues[5] + 4*weightedValues[6] + 8*weightedValues[7]) / 4;
   
 
